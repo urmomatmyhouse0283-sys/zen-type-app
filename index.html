@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>monkeytype v2 - Typing Speed Test</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Changed font import to Roboto Mono */
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@100..700&display=swap');
+        
+        /* Apply Roboto Mono globally */
+        body { 
+            font-family: 'Roboto Mono', monospace; 
+        }
+        
+        /* Custom Tailwind Configuration (same as utility classes but ensures custom colors are defined) */
+        .bg-primary-dark { background-color: #1a1a1a; }
+        .text-accent { color: #f59e0b; /* Amber-500 for a warm glow */ }
+        .bg-card-dark { background-color: #262626; }
+        .text-subtle { color: #9ca3af; /* Gray-400 */ }
+        
+        /* Custom Typing Area Styling */
+        /* Ensuring typing area explicitly uses the new font for character positioning consistency */
+        #typing-text-area {
+            font-family: 'Roboto Mono', monospace; 
+            font-size: 1.5rem;
+            line-height: 2.2rem;
+            min-height: 6.6rem; /* Ensures area doesn't jump (3 lines high) */
+            caret-color: transparent; /* Hide native caret */
+            cursor: default; /* Remove text-select cursor */
+            overflow: hidden; /* Hide overflow as we use translateY for scrolling */
+            position: relative; /* Needed for absolute positioning of the caret */
+        }
+        
+        #text-container {
+            transition: transform 0.1s ease-out; /* Smooth scrolling animation */
+        }
+
+        .word {
+            display: inline-block;
+            margin-right: 0.5rem;
+            white-space: pre-wrap;
+        }
+
+        .correct { color: #84cc16; /* Green-500 */ }
+        .incorrect { color: #ef4444; /* Red-500 */ background-color: #ef444430; border-radius: 2px; }
+        .pending { color: #525252; /* Gray-600 */ }
+        
+        /* --- CARET STYLES --- */
+        #caret {
+            position: absolute;
+            height: 1.6rem; /* Slightly shorter than line-height */
+            width: 2px; /* Thin line */
+            background-color: #f59e0b; /* Accent color */
+            
+            /* Smooth transition for movement */
+            transition: transform 0.05s linear; 
+
+            /* Blinking animation */
+            animation: caret-blink 1s step-end infinite;
+            
+            /* Center the caret vertically within the line */
+            margin-top: 0.3rem; 
+            z-index: 10;
+            opacity: 1; /* Start visible and blinking */
+        }
+
+        #ghost-caret {
+            position: absolute;
+            height: 1.6rem; 
+            width: 2px; 
+            background-color: #3b82f6; /* Blue-500 for a distinct ghost color */
+            transition: transform 0.1s linear; 
+            margin-top: 0.3rem; 
+            z-index: 9; /* Below user caret */
+            opacity: 0; /* Start hidden */
+        }
+        
+        @keyframes caret-blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* Active button styling */
+        .active-difficulty, .active-limit {
+            background-color: #f59e0b; 
+            color: #1a1a1a;
+            border-color: #f59e0b;
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'primary-dark': '#1a1a1a',
+                        'card-dark': '#262626',
+                        'accent': '#f59e0b',
+                        'success': '#84cc16',
+                        'error': '#ef4444',
+                    },
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-primary-dark text-gray-100 min-h-screen p-4 flex flex-col items-center justify-center">
+
+    <!-- Game Container (Visible during test) -->
+    <div id="game-container" class="w-full max-w-4xl p-4 md:p-8">
+        <header class="text-center mb-6">
+            <h1 class="text-5xl font-extrabold text-white">monkeytype <span class="text-accent">v2</span></h1>
+            <p class="text-gray-400 mt-2">Start typing any letter to begin, or press **TAB** to restart.</p>
+        </header>
+
+        <!-- Difficulty Selection -->
+        <div class="flex justify-center space-x-4 mb-4">
+            <button class="difficulty-btn bg-card-dark text-gray-400 hover:bg-gray-700 font-semibold py-2 px-4 rounded-xl transition duration-150 border border-gray-700 active-difficulty" data-difficulty="common">Common</button>
+            <button class="difficulty-btn bg-card-dark text-gray-400 hover:bg-gray-700 font-semibold py-2 px-4 rounded-xl transition duration-150 border border-gray-700" data-difficulty="medium">Medium</button>
+            <button class="difficulty-btn bg-card-dark text-gray-400 hover:bg-gray-700 font-semibold py-2 px-4 rounded-xl transition duration-150 border border-gray-700" data-difficulty="all">All Words</button>
+        </div>
+
+        <!-- Word Count Selection -->
+        <div class="flex justify-center space-x-4 mb-8">
+            <button class="word-limit-btn bg-card-dark text-gray-400 hover:bg-gray-700 font-semibold py-2 px-4 rounded-xl transition duration-150 border border-gray-700" data-limit="10">10 Words</button>
+            <button class="word-limit-btn bg-card-dark text-gray-400 hover:bg-gray-700 font-semibold py-2 px-4 rounded-xl transition duration-150 border border-gray-700" data-limit="15">15 Words</button>
+            <button class="word-limit-btn bg-card-dark text-gray-400 hover:bg-gray-700 font-semibold py-2 px-4 rounded-xl transition duration-150 border border-gray-700" data-limit="30">30 Words</button>
+            <button class="word-limit-btn bg-card-dark text-gray-400 hover:bg-gray-700 font-semibold py-2 px-4 rounded-xl transition duration-150 border border-gray-700 active-limit" data-limit="50">50 Words</button>
+        </div>
+
+        <!-- Metrics Display -->
+        <div class="flex justify-around items-center mb-8 p-4 bg-card-dark rounded-xl shadow-lg border border-gray-700">
+            <div class="text-center">
+                <p class="text-sm text-gray-400">Words Left</p>
+                <div id="word-limit-display" class="text-4xl font-mono font-bold text-accent">50</div>
+            </div>
+            <div class="text-center">
+                <p class="text-sm text-gray-400">Difficulty</p>
+                <div id="difficulty-display" class="text-4xl font-mono font-bold">COMMON</div>
+            </div>
+            <div class="text-center">
+                <p class="text-sm text-gray-400">WPM</p>
+                <div id="wpm-display" class="text-4xl font-mono font-bold">0</div>
+            </div>
+            <div class="text-center">
+                <p class="text-sm text-gray-400">Accuracy</p>
+                <div id="accuracy-display" class="text-4xl font-mono font-bold">0%</div>
+            </div>
+            <div class="text-center">
+                <p class="text-sm text-gray-400">Personal Best</p>
+                <div id="pb-wpm-display" class="text-4xl font-mono font-bold text-blue-400">0</div>
+            </div>
+        </div>
+
+        <!-- Typing Area -->
+        <div id="typing-text-area" 
+             class="bg-card-dark p-6 rounded-xl shadow-2xl focus:outline-none focus:ring-4 focus:ring-accent/50 transition duration-150 relative select-none">
+            <span id="caret"></span> <!-- User caret starts visible -->
+            <span id="ghost-caret"></span> <!-- Ghost caret starts hidden (opacity: 0 in CSS) -->
+            <div id="text-container">
+                <!-- Text will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Screen (Hidden by default) -->
+    <div id="results-screen" class="w-full max-w-4xl p-4 md:p-8 flex-col items-center justify-center hidden">
+        <h2 class="text-5xl font-extrabold text-white text-center mb-10">Test Complete!</h2>
+
+        <div class="grid grid-cols-2 gap-6 bg-card-dark p-10 rounded-xl shadow-2xl border-t-4 border-accent">
+            <div class="text-center p-4 border-r border-gray-700">
+                <p class="text-subtle text-lg font-medium">Final WPM</p>
+                <div id="final-wpm" class="text-7xl font-mono font-bold text-success mt-1">0</div>
+            </div>
+            <div class="text-center p-4">
+                <p class="text-subtle text-lg font-medium">Accuracy</p>
+                <div id="final-accuracy" class="text-7xl font-mono font-bold text-white mt-1">0%</div>
+            </div>
+            <div class="text-center p-4 border-r border-t border-gray-700">
+                <p class="text-subtle text-lg font-medium">Consistency</p>
+                <div id="final-consistency" class="text-5xl font-mono font-bold text-accent mt-1">0%</div>
+            </div>
+            <div class="text-center p-4 border-t border-gray-700">
+                <p class="text-subtle text-lg font-medium">Time</p>
+                <div id="final-time" class="text-5xl font-mono font-bold text-white mt-1">0s</div>
+            </div>
+        </div>
+        
+        <div class="text-center mt-10">
+            <button onclick="startGame(true)" class="bg-accent hover:bg-yellow-600 text-black font-semibold py-3 px-8 rounded-xl text-xl transition duration-200 shadow-lg">
+                Restart Test (or press TAB)
+            </button>
+        </div>
+    </div>
+
+    <!-- Custom Message Box for errors/info -->
+    <div id="message-box" class="fixed top-0 left-1/2 transform -translate-x-1/2 mt-4 p-3 bg-red-600 text-white rounded-lg shadow-xl text-sm z-50 hidden"></div>
+
+    <script type="module">
+        // --- Firebase Globals (Mandatory) ---
+        // These global variables are provided by the canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        let db;
+        let auth;
+        let userId = 'anon';
+        let isAuthReady = false;
+
+        // --- Game Data ---
+        // A comprehensive list of approximately 300 of the most common English words, 
+        const MASTER_WORDS = [
+            "the", "of", "and", "a", "to", "in", "is", "you", "that", "it", "he", "was", "for", "on", "are", "as", "with", "his", "they", "i", 
+            "at", "be", "this", "have", "from", "or", "one", "had", "by", "word", "but", "not", "what", "all", "were", "we", "when", "your", "can", "said", 
+            "there", "use", "an", "each", "which", "she", "do", "how", "their", "if", "will", "up", "other", "about", "out", "many", "then", "them", "these", "so", 
+            "some", "her", "would", "make", "like", "him", "into", "time", "has", "look", "two", "more", "write", "go", "see", "number", "no", "way", "could", "people", 
+            "my", "than", "first", "water", "been", "call", "who", "oil", "sit", "now", "find", "long", "down", "day", "did", "get", "come", "made", "may", "part", 
+            "over", "new", "sound", "take", "only", "little", "work", "know", "place", "year", "live", "me", "back", "give", "most", "very", "after", "thing", "our", "just", 
+            "name", "good", "sentence", "man", "think", "say", "great", "where", "help", "through", "much", "before", "line", "right", "too", "mean", "old", "any", "same", "tell", 
+            "boy", "follow", "came", "want", "show", "also", "around", "farm", "three", "small", "set", "put", "end", "does", "another", "well", "large", "must", "big", "even", 
+            "such", "because", "turn", "here", "why", "ask", "went", "men", "read", "need", "land", "different", "home", "us", "move", "try", "kind", "hand", "picture", "again", 
+            "change", "off", "play", "spell", "air", "away", "animal", "house", "point", "page", "letter", "mother", "answer", "found", "study", "still", "learn", "should", "america", "world", 
+            "high", "every", "near", "add", "food", "between", "own", "below", "country", "plant", "last", "school", "father", "keep", "tree", "never", "start", "city", "earth", "light", 
+            "thought", "head", "under", "story", "saw", "left", "don’t", "while", "might", "close", "real", "seem", "next", "hard", "open", "example", "begin", "life", "always", "those", 
+            "both", "paper", "together", "got", "group", "often", "run", "important", "until", "children", "side", "feet", "car", "mile", "night", "walk", "white", "sea", "began", "grow", 
+            "took", "river", "four", "carry", "state", "once", "book", "hear", "stop", "without", "second", "late", "miss", "idea", "enough", "eat", "face", "watch", "far", "india", 
+            "draw", "clear", "sing", "listen", "dance", "true", "during", "hundred", "love", "feel", "form", "less", "morning", "power", "space", "sun", "unit", "area", "line", "art",
+            "fact", "market", "matter", "month", "person", "public", "reason", "report", "result", "service", "system", "term", "view", "voice", "wall", "west", "woman", "young", "money", 
+            "company", "issue", "group", "service", "party", "business", "community", "process", "school", "level", "policy", "office", "action", "today", "table", "rate", "data", "fire"
+        ];
+        
+        // --- DOM Elements ---
+        const gameContainer = document.getElementById('game-container');
+        const resultsScreen = document.getElementById('results-screen');
+        const textArea = document.getElementById('typing-text-area');
+        const textContainer = document.getElementById('text-container');
+        const caretEl = document.getElementById('caret');
+        const ghostCaretEl = document.getElementById('ghost-caret'); // NEW
+        const wordLimitDisplay = document.getElementById('word-limit-display');
+        const difficultyDisplay = document.getElementById('difficulty-display');
+        const wpmDisplay = document.getElementById('wpm-display');
+        const accuracyDisplay = document.getElementById('accuracy-display');
+        const pbWpmDisplay = document.getElementById('pb-wpm-display'); // NEW
+        const wordLimitButtons = document.querySelectorAll('.word-limit-btn');
+        const difficultyButtons = document.querySelectorAll('.difficulty-btn');
+
+        // --- Game State ---
+        let rawText = "";
+        let words = [];
+        let wordTimings = []; 
+        let inputLog = "";
+        let charIndex = 0;
+        let wordIndex = 0; 
+        let errors = 0;
+        let totalTypedChars = 0;
+        let totalCorrectChars = 0;
+        let wordLimit = 50; 
+        let wordDifficulty = 'common'; 
+
+        let isGameRunning = false;
+        let startTime; 
+        let ghostIntervalId; // NEW: Animation frame ID for ghost
+
+        // --- Personal Best State ---
+        let bestWPM = 0; 
+
+
+        // --- Firebase Utility Functions ---
+        async function initializeFirebase() {
+            if (!firebaseConfig) {
+                console.error("Firebase config not found. Skipping persistence features.");
+                isAuthReady = true;
+                return;
+            }
+
+            try {
+                const { initializeApp } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js");
+                const { getAuth, signInAnonymously, signInWithCustomToken } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js");
+                const { getFirestore, doc, setDoc, getDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                
+                // setLogLevel('Debug'); // Uncomment to see Firebase logs
+
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                
+                userId = auth.currentUser?.uid || 'anon';
+                isAuthReady = true;
+                console.log(`Firebase initialized. User ID: ${userId}`);
+                await fetchPersonalBest();
+
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                isAuthReady = true; // Still allow game to run
+            }
+        }
+
+        /**
+         * Fetches the user's best WPM from Firestore.
+         */
+        async function fetchPersonalBest() {
+            if (!db || !isAuthReady) return;
+
+            try {
+                const { doc, getDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                // Public path: /artifacts/{appId}/public/data/zenTypePB/bestStats (Public for easy sharing/access)
+                const pbRef = doc(db, `artifacts/${appId}/public/data/zenTypePB`, 'bestStats');
+                const docSnap = await getDoc(pbRef);
+
+                if (docSnap.exists()) {
+                    bestWPM = docSnap.data().wpm || 0;
+                    pbWpmDisplay.textContent = bestWPM;
+                } else {
+                    bestWPM = 0;
+                    pbWpmDisplay.textContent = 0;
+                }
+            } catch (error) {
+                console.error("Error fetching personal best:", error);
+            }
+        }
+
+        /**
+         * Saves a new personal best WPM to Firestore.
+         */
+        async function savePersonalBest(newWPM) {
+            if (!db || !isAuthReady || newWPM <= bestWPM) return;
+
+            try {
+                const { doc, setDoc } = await import("https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js");
+                const pbRef = doc(db, `artifacts/${appId}/public/data/zenTypePB`, 'bestStats');
+                
+                await setDoc(pbRef, {
+                    wpm: newWPM,
+                    lastUpdated: Date.now(),
+                    userId: userId 
+                }, { merge: true });
+
+                bestWPM = newWPM;
+                pbWpmDisplay.textContent = newWPM;
+                console.log("New Personal Best saved:", newWPM);
+            } catch (error) {
+                console.error("Error saving personal best:", error);
+            }
+        }
+        // --- End Firebase Utilities ---
+
+
+        // --- Utility Functions ---
+
+        /**
+         * Standard Fisher-Yates (Knuth) shuffle algorithm for randomization.
+         */
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        /**
+         * Finds a character element at a specific global index.
+         * @param {number} globalIndex 
+         * @returns {HTMLElement|null}
+         */
+        function getCharElement(globalIndex) {
+            // Select all span elements that are not the word containers (i.e., the characters and spaces)
+            const allCharElements = textContainer.querySelectorAll('span:not(.word)');
+            if (globalIndex >= 0 && globalIndex < allCharElements.length) {
+                return allCharElements[globalIndex];
+            }
+            return null;
+        }
+
+        /**
+         * Calculates the Consistency score based on the standard deviation of word-level WPMs.
+         */
+        function calculateConsistency(wordTimings, words, startTime) {
+            if (wordTimings.length < 2) return 100; 
+
+            let wordWPMs = [];
+            let previousTime = startTime;
+            
+            // Note: WordTimings only contains timestamps for words completed with a space.
+            for (let i = 0; i < wordTimings.length; i++) {
+                const currentTime = wordTimings[i];
+                const word = words[i]; 
+                const wordLength = (word ? word.length : 0) + 1; // Word length + space
+
+                if (wordLength > 0) {
+                    const timeDiff = (currentTime - previousTime) / 60000; 
+                    if (timeDiff > 0) {
+                        const wpm = (wordLength / 5) / timeDiff;
+                        wordWPMs.push(wpm);
+                    }
+                }
+                previousTime = currentTime;
+            }
+
+            if (wordWPMs.length < 2) return 100;
+
+            const mean = wordWPMs.reduce((sum, wpm) => sum + wpm, 0) / wordWPMs.length;
+            const squaredDifferences = wordWPMs.map(wpm => (wpm - mean) ** 2);
+            const variance = squaredDifferences.reduce((sum, diff) => sum + diff, 0) / wordWPMs.length;
+            const standardDeviation = Math.sqrt(variance);
+
+            let consistency = 100 - ((standardDeviation / mean) * 100);
+            
+            return Math.max(0, Math.min(100, Math.round(consistency)));
+        }
+
+        // --- Setup and Initialization ---
+
+        /**
+         * Selects a random passage and prepares the text for typing.
+         */
+        function prepareText() {
+            let filteredWords = [];
+            const mutableWords = [...MASTER_WORDS]; 
+
+            switch (wordDifficulty) {
+                case 'common':
+                    filteredWords = mutableWords.filter(w => w.length <= 5 && w.length > 0);
+                    break;
+                case 'medium':
+                    filteredWords = mutableWords.filter(w => w.length <= 7 && w.length > 0);
+                    break;
+                case 'all':
+                default:
+                    filteredWords = mutableWords.filter(w => w.length > 0);
+                    break;
+            }
+            
+            const shuffledWords = shuffleArray(filteredWords);
+
+            const maxWordsAvailable = shuffledWords.length;
+            let currentWordLimit = wordLimit;
+
+            if (currentWordLimit > maxWordsAvailable) {
+                currentWordLimit = maxWordsAvailable;
+            }
+            
+            let passageWords = shuffledWords.length > 0 ? shuffledWords.slice(0, currentWordLimit) : ["start"];
+            
+            // Raw text MUST include the final space for consistent parsing of words and spaces
+            rawText = passageWords.join(' ') + ' '; 
+            words = passageWords; 
+            
+            // Render the initial text
+            textContainer.innerHTML = ''; // CLEARS ALL PREVIOUS CONTENT
+            
+            let currentWordElement;
+
+            // Iterate over rawText (including all spaces) for rendering
+            rawText.split('').forEach((char) => {
+                const charElement = document.createElement('span');
+                charElement.textContent = char;
+                charElement.className = 'pending';
+
+                if (!currentWordElement || char === ' ') {
+                    // Start of a new word/sequence, create a new container
+                    if (char !== ' ') {
+                        currentWordElement = document.createElement('span');
+                        currentWordElement.className = 'word';
+                        textContainer.appendChild(currentWordElement);
+                    }
+                }
+                
+                // Append space character directly to the text container
+                if (char === ' ') {
+                    textContainer.appendChild(charElement);
+                    currentWordElement = null; // Reset for the next word
+                } else if (currentWordElement) {
+                    currentWordElement.appendChild(charElement);
+                }
+            });
+        }
+
+        /**
+         * Sets the test word difficulty and restarts the game setup.
+         */
+        function setWordDifficulty(difficulty) {
+            wordDifficulty = difficulty;
+            difficultyDisplay.textContent = difficulty.toUpperCase();
+            
+            difficultyButtons.forEach(btn => {
+                btn.classList.remove('active-difficulty', 'border-accent');
+                btn.classList.add('border-gray-700');
+                if (btn.dataset.difficulty === wordDifficulty) {
+                    btn.classList.add('active-difficulty', 'border-accent');
+                }
+            });
+            
+            startGame(true); 
+        }
+
+        /**
+         * Sets the test word limit and restarts the game setup.
+         */
+        function setWordLimit(limit) {
+            wordLimit = parseInt(limit);
+            wordLimitDisplay.textContent = wordLimit;
+            
+            wordLimitButtons.forEach(btn => {
+                btn.classList.remove('active-limit', 'border-accent');
+                btn.classList.add('border-gray-700');
+                if (parseInt(btn.dataset.limit) === wordLimit) {
+                    btn.classList.add('active-limit', 'border-accent');
+                }
+            });
+            
+            startGame(true); 
+        }
+
+        /**
+         * Starts or resets the game state.
+         * @param {boolean} forceRestart - Forces a restart even if game is running.
+         */
+        window.startGame = function(forceRestart = false) {
+            if (isGameRunning && !forceRestart) return;
+
+            // Stop any running ghost animation
+            if(ghostIntervalId) {
+                cancelAnimationFrame(ghostIntervalId);
+            }
+            ghostCaretEl.style.opacity = 0;
+
+            // Show game, hide results
+            gameContainer.classList.remove('hidden');
+            resultsScreen.classList.add('hidden');
+            
+            // Clear previous game state
+            charIndex = 0;
+            wordIndex = 0;
+            errors = 0;
+            totalTypedChars = 0;
+            totalCorrectChars = 0;
+            inputLog = "";
+            isGameRunning = false;
+            wordTimings = [];
+            
+            // Update displays
+            wpmDisplay.textContent = '0';
+            accuracyDisplay.textContent = '0%';
+            wordLimitDisplay.textContent = wordLimit;
+            
+            // Reset text container scroll
+            textContainer.style.transform = `translateY(0px)`;
+            
+            // Start blinking the user caret and ensure it's visible
+            caretEl.style.animationPlayState = 'running';
+            caretEl.style.opacity = 1;
+
+            prepareText();
+            document.removeEventListener('keydown', handleGlobalKeydown);
+            document.addEventListener('keydown', handleGlobalKeydown);
+            renderText(); // Call to position the caret initially!
+        }
+
+        /**
+         * Handles the end of the test and displays the full results screen.
+         */
+        function endGame() {
+            isGameRunning = false;
+            document.removeEventListener('keydown', handleGlobalKeydown);
+            
+            // Stop and hide carets
+            caretEl.style.animationPlayState = 'paused';
+            caretEl.style.opacity = 0;
+            cancelAnimationFrame(ghostIntervalId);
+            ghostCaretEl.style.opacity = 0;
+            
+            const endTime = Date.now();
+            const elapsedMilliseconds = endTime - startTime;
+            const elapsedSeconds = (elapsedMilliseconds / 1000).toFixed(1);
+            const elapsedMinutes = elapsedMilliseconds / (1000 * 60);
+
+            // Final Calculations
+            const finalWPM = elapsedMinutes > 0 ? Math.round((totalCorrectChars / 5) / elapsedMinutes) : 0;
+            const finalAccuracy = totalTypedChars > 0 ? Math.round((totalCorrectChars / totalTypedChars) * 100) : 0;
+            
+            const finalConsistency = calculateConsistency(wordTimings, words, startTime);
+            
+            // Hide game, show results
+            gameContainer.classList.add('hidden');
+            resultsScreen.classList.remove('hidden');
+            
+            // Populate Results Screen
+            document.getElementById('final-wpm').textContent = finalWPM;
+            document.getElementById('final-accuracy').textContent = `${finalAccuracy}%`;
+            document.getElementById('final-consistency').textContent = `${finalConsistency}%`;
+            document.getElementById('final-time').textContent = `${elapsedSeconds}s`;
+
+            // NEW: Check and save Personal Best
+            savePersonalBest(finalWPM);
+        }
+
+        // --- Ghost Animation Logic ---
+        /**
+         * Continuously updates the ghost's position based on the bestWPM.
+         * @param {number} timestamp - The current time provided by requestAnimationFrame.
+         */
+        function updateGhostPosition(timestamp) {
+            // Only run if the game is active and a PB exists
+            if (!isGameRunning || bestWPM === 0 || rawText.length === 0) {
+                 // If PB is 0, we still need to continue checking in case the PB is set during the test
+                 ghostIntervalId = requestAnimationFrame(updateGhostPosition);
+                 return;
+            }
+
+            // Calculate elapsed time since game started
+            const elapsedMilliseconds = timestamp - startTime;
+            const elapsedSeconds = elapsedMilliseconds / 1000;
+            
+            // Target character index based on best WPM
+            // (Best WPM * 5 chars/word / 60 seconds/minute) * elapsed seconds
+            const ghostTargetIndexFloat = (bestWPM * 5 / 60) * elapsedSeconds;
+            let ghostIndex = Math.floor(ghostTargetIndexFloat);
+            
+            // Ensure ghost doesn't move past the end of the text
+            ghostIndex = Math.min(ghostIndex, rawText.length - 1); 
+            
+            // Limit ghost to stay visually relevant (only move if user is far behind or close)
+            ghostIndex = Math.min(ghostIndex, charIndex + 25); 
+            
+            const targetCharEl = getCharElement(ghostIndex);
+
+            if (targetCharEl) {
+                const charRect = targetCharEl.getBoundingClientRect();
+                const textAreaRect = textArea.getBoundingClientRect();
+                const paddingLeft = parseFloat(window.getComputedStyle(textArea).paddingLeft);
+                
+                // Position relative to the typing area
+                const caretLeft = charRect.left - textAreaRect.left - paddingLeft;
+                const caretTop = charRect.top - textAreaRect.top;
+                
+                // Apply the ghost caret position
+                ghostCaretEl.style.transform = `translate(${caretLeft + paddingLeft}px, ${caretTop}px)`;
+                ghostCaretEl.style.opacity = 0.5; 
+            } else {
+                ghostCaretEl.style.opacity = 0;
+            }
+
+            // Continue the loop
+            if (isGameRunning) {
+                ghostIntervalId = requestAnimationFrame(updateGhostPosition);
+            }
+        }
+
+        // --- Input Handling ---
+        
+        /**
+         * Handles all keyboard input during the game.
+         */
+        function handleGlobalKeydown(event) {
+            if (!resultsScreen.classList.contains('hidden')) {
+                if (event.key === 'Tab') {
+                    event.preventDefault();
+                    startGame(true);
+                }
+                return;
+            }
+
+            if (event.key === 'Tab') {
+                event.preventDefault();
+                startGame(true);
+                return;
+            }
+
+            if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                event.preventDefault(); 
+                
+                if (!isGameRunning) {
+                    isGameRunning = true;
+                    startTime = Date.now();
+                    
+                    // Stop blinking user caret and show it solid
+                    caretEl.style.animationPlayState = 'paused'; 
+                    caretEl.style.opacity = 1;
+
+                    // NEW: Start the ghost animation loop (it will handle visibility based on bestWPM)
+                    if (bestWPM > 0) {
+                         ghostIntervalId = requestAnimationFrame(updateGhostPosition);
+                    }
+                }
+                processInput(event.key);
+            } else if (event.key === 'Backspace' && isGameRunning) {
+                event.preventDefault();
+                processBackspace();
+            }
+        }
+
+        /**
+         * Processes a character input.
+         */
+        function processInput(char) {
+            if (!isGameRunning) return;
+            
+            const targetChar = rawText[charIndex];
+            
+            // The final letter of the test content is at rawText.length - 2 
+            const isFinalLetter = charIndex === rawText.length - 2;
+
+            if (targetChar) {
+                totalTypedChars++;
+                inputLog += char; 
+
+                const charEl = getCharElement(charIndex);
+
+                if (char === targetChar) {
+                    totalCorrectChars++;
+                    if (charEl) charEl.className = 'correct';
+                } else {
+                    errors++;
+                    if (charEl) charEl.className = 'incorrect';
+                }
+                
+                charIndex++; // Move cursor forward
+            } 
+            
+            // 1. Check for end of test condition: ends immediately after typing the final letter.
+            if (isFinalLetter) {
+                updateMetrics(); // Final update to WPM/Accuracy
+                renderText(); // Move caret one last time
+                endGame();
+                return;
+            }
+
+            // 2. Check for word completion (This only runs for words NOT including the final word)
+            if (charIndex > 0 && rawText[charIndex - 1] === ' ') {
+                if (wordTimings.length === wordIndex) {
+                    wordTimings.push(Date.now()); 
+                    wordIndex++; 
+                }
+            }
+
+            // Standard update for all other keys
+            updateMetrics();
+            renderText();
+        }
+
+        /**
+         * Processes the backspace key.
+         */
+        function processBackspace() {
+            // Prevent backspacing past the start
+            if (charIndex === 0) return;
+
+            charIndex--;
+            totalTypedChars = Math.max(0, totalTypedChars - 1);
+            
+            const charEl = getCharElement(charIndex);
+
+            if (charEl) {
+                if (charEl.classList.contains('correct')) {
+                    totalCorrectChars = Math.max(0, totalCorrectChars - 1);
+                }
+                if (charEl.classList.contains('incorrect')) {
+                    errors = Math.max(0, errors - 1);
+                }
+                
+                // If we backspace over a space, we conceptually 'un-complete' the word for timing purposes
+                if (charEl.textContent === ' ' && wordIndex > 0) {
+                    if (wordTimings.length === wordIndex) {
+                         wordTimings.pop();
+                         wordIndex--;
+                    }
+                }
+                
+                charEl.className = 'pending'; 
+            }
+
+            inputLog = inputLog.slice(0, -1); 
+            updateMetrics();
+            renderText();
+        }
+
+        /**
+         * Updates the visual state of the text (cursor position, colors) and handles scrolling.
+         */
+        function renderText() {
+            // 1. Character Coloring (Ensures characters reset if backspaced)
+            const allCharElements = textContainer.querySelectorAll('span:not(.word)');
+            allCharElements.forEach((charEl, index) => {
+                if (index >= charIndex) {
+                    if (charEl.textContent === rawText[index]) {
+                         charEl.className = 'pending';
+                    }
+                }
+            });
+
+            // 2. Caret Positioning and Smooth Scroll
+            const targetCharEl = getCharElement(charIndex);
+
+            if (targetCharEl) {
+                // Calculate caret position (at the start of the next character)
+                const charRect = targetCharEl.getBoundingClientRect();
+                const textAreaRect = textArea.getBoundingClientRect();
+                
+                const paddingLeft = parseFloat(window.getComputedStyle(textArea).paddingLeft);
+                const caretLeft = charRect.left - textAreaRect.left - paddingLeft;
+                const caretTop = charRect.top - textAreaRect.top;
+                
+                // Apply the transformation for smooth movement
+                caretEl.style.transform = `translate(${caretLeft + paddingLeft}px, ${caretTop}px)`;
+
+                // 3. Scroll Logic
+                const lineHeight = 35; 
+                const paddingTop = parseFloat(window.getComputedStyle(textArea).paddingTop);
+
+                // We scroll up if the target character is past the second line height
+                if (charRect.top > textAreaRect.top + lineHeight + paddingTop + 5) { 
+                    const linesPassed = Math.floor((charRect.top - textAreaRect.top - paddingTop) / lineHeight);
+                    if (linesPassed >= 1) {
+                         textContainer.style.transform = `translateY(-${linesPassed * lineHeight}px)`;
+                    }
+                } else if (charIndex < 10) { 
+                    // Reset scroll near the start
+                    textContainer.style.transform = `translateY(0px)`;
+                }
+            } else if (charIndex === 0 && rawText.length > 0) {
+                 // Ensure caret shows at start if text exists
+                 const firstCharEl = getCharElement(0);
+                 if(firstCharEl) {
+                     const charRect = firstCharEl.getBoundingClientRect();
+                     const textAreaRect = textArea.getBoundingClientRect();
+                     const paddingLeft = parseFloat(window.getComputedStyle(textArea).paddingLeft);
+                     const caretTop = charRect.top - textAreaRect.top;
+                     caretEl.style.transform = `translate(${paddingLeft}px, ${caretTop}px)`;
+                 }
+            }
+        }
+        
+        /**
+         * Updates WPM and Accuracy metrics in real-time.
+         */
+        function updateMetrics() {
+            const elapsedMilliseconds = isGameRunning ? (Date.now() - startTime) : 0;
+            const elapsedMinutes = elapsedMilliseconds / (1000 * 60);
+
+            const wpm = elapsedMinutes > 0 ? Math.round((totalCorrectChars / 5) / elapsedMinutes) : 0;
+            const accuracy = totalTypedChars > 0 ? Math.round((totalCorrectChars / totalTypedChars) * 100) : 0;
+            
+            // Words left is based on total words minus completed words (which is wordIndex)
+            const wordsLeft = Math.max(0, words.length - wordIndex);
+
+            wordLimitDisplay.textContent = wordsLeft;
+            wpmDisplay.textContent = wpm;
+            accuracyDisplay.textContent = `${accuracy}%`;
+            
+            if (wpm > 60) wpmDisplay.classList.add('text-success');
+            else wpmDisplay.classList.remove('text-success');
+        }
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Setup click listeners for difficulty buttons
+            difficultyButtons.forEach(btn => {
+                btn.addEventListener('click', () => setWordDifficulty(btn.dataset.difficulty));
+            });
+
+            // Setup click listeners for word limit buttons
+            wordLimitButtons.forEach(btn => {
+                btn.addEventListener('click', () => setWordLimit(btn.dataset.limit));
+            });
+
+            // NEW: Initialize Firebase and fetch PB before starting the game
+            initializeFirebase(); 
+
+            // Set default difficulty and limit and start game
+            setWordDifficulty('common');
+            setWordLimit(50);
+        });
+
+    </script>
+</body>
+</html>
